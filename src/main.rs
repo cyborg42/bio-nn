@@ -1,11 +1,10 @@
 use crossbeam::channel;
 use dashmap::DashMap;
 
-use std::{mem, thread};
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::{self, Duration};
-
+use std::{mem, thread};
 
 struct Neuron {
     id: usize,
@@ -17,7 +16,6 @@ struct Neuron {
     recv: channel::Receiver<f64>,
     shared_info: Arc<SharedInfo>,
 }
-
 
 impl Neuron {
     fn start(&mut self) {
@@ -36,7 +34,6 @@ impl Neuron {
                 && id != self.id
                 && rand < *self.shared_info.neurons_activity.get(&id).unwrap() + 0.1
             {
-
                 self.sends.push((id, rand));
             }
         }
@@ -46,25 +43,34 @@ impl Neuron {
             //self.activity = self.activity.min(1.);
             self.sleep_time_ms = 1;
             for (id, weight) in self.sends.iter_mut() {
-                self.shared_info.sends[*id].send(recv * *weight * self.energy).unwrap();
-                *weight += duration * self.activity * *self.shared_info.neurons_activity.get(id).unwrap();
+                self.shared_info.sends[*id]
+                    .send(recv * *weight * self.energy)
+                    .unwrap();
+                *weight +=
+                    duration * self.activity * *self.shared_info.neurons_activity.get(id).unwrap();
                 //*weight = (*weight).min(1.);
             }
             self.energy = 0.;
         } else {
-            self.sends = self.sends.iter().filter_map(|(id, weight)| {
-                let x = (*id, weight * f64::powf(0.5, duration));
-                if x.1 > 0.01 {
-                    Some(x)
-                } else {
-                    None
-                }
-            }).collect();
-            
+            self.sends = self
+                .sends
+                .iter()
+                .filter_map(|(id, weight)| {
+                    let x = (*id, weight * f64::powf(0.5, duration));
+                    if x.1 > 0.01 {
+                        Some(x)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
             self.sleep_time_ms = (self.sleep_time_ms * 2).min(1000);
         }
-        self.shared_info.neurons_activity.insert(self.id, self.activity);
-        
+        self.shared_info
+            .neurons_activity
+            .insert(self.id, self.activity);
+
         sleep(Duration::from_millis(self.sleep_time_ms));
     }
 }
@@ -85,7 +91,6 @@ struct SharedInfo {
 
 impl NeuralNetwork {
     fn new(size: usize, max_energy: f64, threshold: f64, max_link: usize) -> Self {
-        let mut neurons = Vec::with_capacity(size);
         let mut shared_info = SharedInfo {
             max_energy,
             threshold,
@@ -102,20 +107,20 @@ impl NeuralNetwork {
             shared_info.neurons_activity.insert(id, 0.);
         }
         let shared_info = Arc::new(shared_info);
-
-        for id in 0..size {
-            let n = Neuron {
+        let neurons: Vec<_> = recvs
+            .into_iter()
+            .enumerate()
+            .map(|(id, recv)| Neuron {
                 id,
                 energy: fastrand::f64(),
                 activity: fastrand::f64(),
                 last_time: time::Instant::now(),
                 sleep_time_ms: 1,
                 sends: Vec::new(),
-                recv: recvs[id].clone(),
+                recv,
                 shared_info: shared_info.clone(),
-            };
-            neurons.push(n);
-        }
+            })
+            .collect();
         let mut neurons_activity = Vec::with_capacity(size);
         neurons_activity.resize(size, 0.);
         Self {
@@ -126,13 +131,10 @@ impl NeuralNetwork {
     fn start(&mut self) {
         let neurons = mem::take(&mut self.neurons);
         for mut neuron in neurons.into_iter() {
-            thread::spawn(move || {
-                loop {
-                    neuron.start();
-                }
+            thread::spawn(move || loop {
+                neuron.start();
             });
         }
-
     }
     fn report(&self) {
         for activity in self.shared_info.neurons_activity.iter() {
@@ -140,14 +142,12 @@ impl NeuralNetwork {
         }
         println!();
     }
-
 }
 
-
 fn main() {
-    let mut nn = NeuralNetwork::new(100,10.,0.1,20);
+    let mut nn = NeuralNetwork::new(100, 10., 0.1, 20);
     nn.start();
-    loop{
+    loop {
         let mut input = String::new();
         std::io::stdin().read_line(&mut input).unwrap();
         nn.report();
